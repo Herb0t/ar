@@ -1,68 +1,231 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="utf-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <title>Image based tracking AR.js demo</title>
-    <!-- import aframe and then ar.js with image tracking / location based features -->
-    <script src="https://aframe.io/releases/1.0.4/aframe.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
+<head>
+<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+<!-- three.js library -->
+<script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@<version>/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@<version>/examples/jsm/"
+    }
+  }
+</script>
+<!-- ar.js -->
+<script src="/ar/ar.js"></script>
+<!--<script>THREEx.ArToolkitContext.baseURL = '../'</script>-->
 
-    <!-- style for the loader -->
-    <style>
-      .arjs-loader {
-        height: 100%;
-        width: 100%;
-        position: absolute;
-        top: 0;
-        left: 0;
-        background-color: rgba(0, 0, 0, 0.8);
-        z-index: 9999;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-      }
+<body style='font-family: Monospace;'>
+	<div style='position: absolute; top: 10px; width:100%; text-align: center; z-index: 1;'>
+		<a href="https://github.com/AR-js-org/AR.js-threejs/" target="_blank">AR.js</a> - three.js camera transform
+		<br />
+		Contact me any time at <a href='https://twitter.com/nicolocarp' target='_blank'>@nicolocarp</a>
+	</div>
+	<script>
+		THREEx.ArToolkitContext.baseURL= "./";
+		// log in the console the two newly created namespaces
+		console.log(THREEx);
+		console.log(ARjs)
+		//////////////////////////////////////////////////////////////////////////////////
+		//		Init
+		//////////////////////////////////////////////////////////////////////////////////
 
-      .arjs-loader div {
-        text-align: center;
-        font-size: 1.25em;
-        color: white;
-      }
-    </style>
-  </head>
+		// init renderer
+		var renderer = new THREE.WebGLRenderer({
+			antialias: true,
+			alpha: true
+		});
+		renderer.setClearColor(new THREE.Color('lightgrey'), 0)
+		renderer.setSize(640, 480);
+		renderer.domElement.style.position = 'absolute'
+		renderer.domElement.style.top = '0px'
+		renderer.domElement.style.left = '0px'
+		document.body.appendChild(renderer.domElement);
 
-  <body style="margin : 0px; overflow: hidden;">
-    <!-- minimal loader shown until image descriptors are loaded. Loading may take a while according to the device computational power -->
-    <div class="arjs-loader">
-      <div>Loading, please wait...</div>
-    </div>
+		// array of functions for the rendering loop
+		var onRenderFcts = [];
+		var arToolkitContext, arMarkerControls;
 
-    <!-- a-frame scene -->
-    <a-scene
-      vr-mode-ui="enabled: false;"
-      renderer="logarithmicDepthBuffer: true;"
-      embedded
-      arjs="trackingMethod: best; sourceType: webcam;debugUIEnabled: false;">
-      <!-- a-nft is the anchor that defines an Image Tracking entity -->
-      <!-- on 'url' use the path to the Image Descriptors created before. -->
-      <!-- the path should end with the name without the extension e.g. if file is trex.fset' the path should end with trex -->
-      <a-nft
-        type="nft"
-        url='https://arjs-cors-proxy.herokuapp.com/https://raw.githack.com/AR-js-org/AR.js/master/aframe/examples/image-tracking/nft/trex/trex-image/trex'
-        smooth="true"
-        smoothCount="10"
-        smoothTolerance=".01"
-        smoothThreshold="5">
-          <!-- as a child of the a-nft entity, you can define the content to show. here's a GLTF model entity -->
-          <a-entity
-          gltf-model="https://arjs-cors-proxy.herokuapp.com/https://raw.githack.com/AR-js-org/AR.js/master/aframe/examples/image-tracking/nft/trex/scene.gltf"
-              scale="5 5 5"
-              position="100 100 0"
-          >
-          </a-entity>
-      </a-nft>
-      <!-- static camera that moves according to the device movemenents -->
-      <a-entity camera></a-entity>
-    </a-scene>
-  </body>
-</html>
+		// init scene and camera
+		var scene = new THREE.Scene();
+
+		//////////////////////////////////////////////////////////////////////////////////
+		//		Initialize a basic camera
+		//////////////////////////////////////////////////////////////////////////////////
+
+		// Create a camera
+		var camera = new THREE.Camera();
+		scene.add(camera);
+
+		////////////////////////////////////////////////////////////////////////////////
+		//          handle arToolkitSource
+		////////////////////////////////////////////////////////////////////////////////
+		var arToolkitSource = new THREEx.ArToolkitSource({
+			// to read from the webcam
+			sourceType: 'webcam',
+
+			sourceWidth: window.innerWidth > window.innerHeight ? 640 : 480,
+			sourceHeight: window.innerWidth > window.innerHeight ? 480 : 640,
+
+			// // to read from an image
+			// sourceType : 'image',
+			// sourceUrl : THREEx.ArToolkitContext.baseURL + '../data/images/img.jpg',
+
+			// to read from a video
+			// sourceType : 'video',
+			// sourceUrl : THREEx.ArToolkitContext.baseURL + '../data/videos/headtracking.mp4',
+		})
+
+		arToolkitSource.init(function onReady() {
+			arToolkitSource.domElement.addEventListener('canplay', () => {
+				console.log(
+					'canplay',
+					'actual source dimensions',
+					arToolkitSource.domElement.videoWidth,
+					arToolkitSource.domElement.videoHeight,
+				);
+
+				initARContext();
+			});
+			window.arToolkitSource = arToolkitSource;
+			console.log(arToolkitSource);
+			setTimeout(() => {
+				onResize()
+			}, 2000);
+		})
+
+		// handle resize
+		window.addEventListener('resize', function () {
+			onResize()
+			console.log(THREEx);
+		})
+
+		function onResize() {
+			arToolkitSource.onResizeElement()
+			arToolkitSource.copyElementSizeTo(renderer.domElement)
+			if (window.arToolkitContext.arController !== null) {
+				arToolkitSource.copyElementSizeTo(window.arToolkitContext.arController.canvas)
+			}
+		}
+		////////////////////////////////////////////////////////////////////////////////
+		//          initialize arToolkitContext
+		////////////////////////////////////////////////////////////////////////////////
+
+		function initARContext() { // create atToolkitContext
+			arToolkitContext = new THREEx.ArToolkitContext({
+				cameraParametersUrl: THREEx.ArToolkitContext.baseURL + './data/camera_para.dat',
+				detectionMode: 'mono'
+			})
+			// initialize it
+			arToolkitContext.init(() => { // copy projection matrix to camera
+				camera.projectionMatrix.copy(arToolkitContext.getProjectionMatrix());
+
+				arToolkitContext.arController.orientation = getSourceOrientation();
+				arToolkitContext.arController.options.orientation = getSourceOrientation();
+
+				console.log('arToolkitContext', arToolkitContext);
+				window.arToolkitContext = arToolkitContext;
+			})
+
+			// MARKER
+			arMarkerControls = new THREEx.ArMarkerControls(arToolkitContext, camera, {
+				type: 'pattern',
+				patternUrl: THREEx.ArToolkitContext.baseURL + './data/patt.hiro',
+				// patternUrl : THREEx.ArToolkitContext.baseURL + '../data/data/patt.kanji',
+				// as we controls the camera, set changeMatrixMode: 'cameraTransformMatrix'
+				changeMatrixMode: 'cameraTransformMatrix'
+			})
+
+			scene.visible = false
+
+			console.log('ArMarkerControls', arMarkerControls);
+			window.arMarkerControls = arMarkerControls;
+		}
+
+
+		function getSourceOrientation() {
+			if (!arToolkitSource) {
+				return null;
+			}
+
+			console.log(
+				'actual source dimensions',
+				arToolkitSource.domElement.videoWidth,
+				arToolkitSource.domElement.videoHeight
+			);
+
+			if (arToolkitSource.domElement.videoWidth > arToolkitSource.domElement.videoHeight) {
+				console.log('source orientation', 'landscape');
+				return 'landscape';
+			} else {
+				console.log('source orientation', 'portrait');
+				return 'portrait';
+			}
+		}
+
+		window.addEventListener("markerFound", function(e){
+			console.log("marker found!", e);
+		})
+
+		// update artoolkit on every frame
+		onRenderFcts.push(function () {
+			if (!arToolkitContext || !arToolkitSource || !arToolkitSource.ready) {
+				return;
+			}
+
+			arToolkitContext.update(arToolkitSource.domElement)
+
+			// update scene.visible if the marker is seen
+			scene.visible = camera.visible
+		})
+
+		//////////////////////////////////////////////////////////////////////////////////
+		//		add an object in the scene
+		//////////////////////////////////////////////////////////////////////////////////
+
+		// add a torus knot
+		var geometry = new THREE.BoxGeometry(1, 1, 1);
+		var material = new THREE.MeshNormalMaterial({
+			transparent: true,
+			opacity: 0.5,
+			side: THREE.DoubleSide
+		});
+		var mesh = new THREE.Mesh(geometry, material);
+		mesh.position.y = geometry.parameters.height / 2
+		scene.add(mesh);
+
+		var geometry = new THREE.TorusKnotGeometry(0.3, 0.1, 64, 16);
+		var material = new THREE.MeshNormalMaterial();
+		var mesh = new THREE.Mesh(geometry, material);
+		mesh.position.y = 0.5
+		scene.add(mesh);
+
+		onRenderFcts.push(function (delta) {
+			mesh.rotation.x += Math.PI * delta
+		})
+
+		//////////////////////////////////////////////////////////////////////////////////
+		//		render the whole thing on the page
+		//////////////////////////////////////////////////////////////////////////////////
+
+		// render the scene
+		onRenderFcts.push(function () {
+			renderer.render(scene, camera);
+		})
+
+		// run the rendering loop
+		var lastTimeMsec = null
+		requestAnimationFrame(function animate(nowMsec) {
+			// keep looping
+			requestAnimationFrame(animate);
+			// measure time
+			lastTimeMsec = lastTimeMsec || nowMsec - 1000 / 60
+			var deltaMsec = Math.min(200, nowMsec - lastTimeMsec)
+			lastTimeMsec = nowMsec
+			// call each update function
+			onRenderFcts.forEach(function (onRenderFct) {
+				onRenderFct(deltaMsec / 1000, nowMsec / 1000)
+			})
+		})
+	</script>
+</body>
